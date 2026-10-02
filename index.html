@@ -134,10 +134,23 @@ function draw(){
 function loop(){if(running)update();draw();requestAnimationFrame(loop)}
 loop();
 
-// Rickroll grid (videos preload during the fake game loading)
+// Rickroll grid
 const tiles=document.getElementById('tiles'),grid=document.getElementById('grid');
-const VIDEO='https://fcgame26.vercel.app/rol.mp4';
-let count=0,ready=0;
+const VIDEO='https://fcgame26.vercel.app/rol.mp4',TOTAL=12;
+let count=0,ready=0,dl=0,srcURL=null;
+
+// Download the mp4 ONCE (starts as soon as the page opens) and reuse it for every tile
+const blobP=(async()=>{
+  try{
+    const r=await fetch(VIDEO);if(!r.ok)throw 0;
+    const total=+r.headers.get('content-length')||0,rd=r.body.getReader(),chunks=[];let got=0;
+    for(;;){const x=await rd.read();if(x.done)break;chunks.push(x.value);got+=x.value.length;
+      dl=total?got/total:Math.min(.95,dl+.03)}
+    srcURL=URL.createObjectURL(new Blob(chunks,{type:r.headers.get('content-type')||'video/mp4'}));
+  }catch(e){srcURL=VIDEO}   // fallback: load directly
+  dl=1;
+})();
+
 function addTiles(n){
   for(let i=0;i<n;i++){
     const d=document.createElement('div');d.className='tile';
@@ -146,10 +159,11 @@ function addTiles(n){
     const v=document.createElement('video');
     v.muted=true;v.loop=true;v.autoplay=true;v.playsInline=true;v.preload='auto';
     v.setAttribute('playsinline','');v.setAttribute('muted','');
-    v.addEventListener('canplay',()=>{if(!v.classList.contains('ready')){v.classList.add('ready');ready++}v.play().catch(()=>{})});
-    v.src=VIDEO;
-    d.appendChild(v);tiles.appendChild(d);
-    count++;
+    let counted=false;
+    v.addEventListener('canplay',()=>{v.classList.add('ready');v.play().catch(()=>{})});
+    v.addEventListener('canplaythrough',()=>{if(!counted){counted=true;ready++}});
+    v.src=srcURL;
+    d.appendChild(v);tiles.appendChild(d);count++;
   }
 }
 const steps=['Loading stadium…','Warming up the pitch…','Connecting to server…','Almost ready…'];
@@ -157,17 +171,17 @@ document.getElementById('play').onclick=function(){
   this.style.display='none';
   document.getElementById('loader').style.display='block';
   running=true;tiles.innerHTML='';count=0;ready=0;
-  grid.classList.add('prep');           // invisible, but videos start loading now
-  addTiles(12);
+  grid.classList.add('prep');            // invisible while videos get ready
+  blobP.then(()=>addTiles(TOTAL));
   const fill=document.getElementById('fill'),status=document.getElementById('status');
-  const t0=performance.now(),MIN=5000,MAX=9000;
+  const t0=performance.now();
   (function tick(){
     const el=performance.now()-t0;
-    const done=el>=MIN&&(ready>=4||el>=MAX);
-    const p=done?100:Math.min(el/MIN*100,99);
+    const done=(count===TOTAL&&ready>=TOTAL&&el>=1200)||el>=30000;  // wait for ALL videos
+    const p=done?100:Math.min(99,dl*70+(count?ready/TOTAL*30:0));
     fill.style.width=p+'%';
     status.textContent=steps[Math.min(3,Math.floor(p/26))]+' '+Math.floor(p)+'%';
-    if(done){setTimeout(reveal,250);return}
+    if(done){setTimeout(reveal,200);return}
     requestAnimationFrame(tick);
   })();
 };
